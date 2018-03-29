@@ -1,0 +1,147 @@
+---
+title: "ML_Ass3_SVM_V2"
+author: "Théo Tortorici"
+date: "3/28/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# 1. Data Preparation 
+
+```{r}
+library(data.table)
+library(plyr)
+library(tm)
+library(e1071)
+library(SnowballC)
+library(caret)
+
+set.seed(42)
+
+# import both datasets
+trainset <- read.csv("/Users/theotortorici/Desktop/Term II/Machine Learning II/Tweet_US_airlines/training.csv", stringsAsFactors = FALSE)
+testset <- read.csv("/Users/theotortorici/Desktop/Term II/Machine Learning II/Tweet_US_airlines/test.csv", stringsAsFactors = FALSE)
+
+# keep only important information for simple SVM based on corpus
+trainset$airline_sentiment <- as.factor(trainset$airline_sentiment)
+trainset2 <- data.table(trainset[, c("tweet_id","airline_sentiment","text")])
+testset2 <- data.table(testset[, c("tweet_id","airline_sentiment"=NULL,"text")])
+
+# merge both sets to get only one corpus good for both
+totalset <- rbind(trainset2, testset2, fill=TRUE)
+corpus <- Corpus(VectorSource(totalset$text))
+
+# clean the corpus
+cleanCorpus <- function(corpus) {
+  corpus <- tm_map(corpus, stemDocument)
+  corpus.tmp <- tm_map(corpus,removePunctuation)
+  corpus.tmp <- tm_map(corpus.tmp,stripWhitespace)
+  corpus.tmp <- tm_map(corpus.tmp,removeWords,stopwords("en"))
+  return(corpus.tmp)
+}
+
+corpus.clean <- cleanCorpus(corpus)
+
+dtm <- DocumentTermMatrix(corpus.clean,control = list(weighting= function(x) weightBin(x)))
+dtm <- removeSparseTerms(dtm, .99)
+
+dataset.train <- totalset[1:5600,]
+dataset.cross.val <- totalset[5601:7000,]
+dataset.test <- totalset[7001:14640,]
+
+dtm.train <- dtm[1:5600,]
+dtm.cross.val <- dtm[5601:7000,]
+dtm.test <- dtm[7001:14640,]
+
+corpus.clean.train <- corpus.clean[1:5600]
+corpus.clean.cross.val <- corpus.clean[5601:7000]
+corpus.clean.test <- corpus.clean[7001:14640]
+
+X <- as.matrix(dtm.train)
+y <- dataset.train$airline_sentiment
+
+training_data <- as.data.frame(cbind(y,X))
+cross_val_data <- as.data.frame(as.matrix(dtm.cross.val))
+test_data <- as.data.frame(as.matrix(dtm.test))
+```
+
+
+# 2. Training SVM on cross-validation sets
+
+```{r}
+# Use the functions in `e1071` package to create an SVM model for the training data
+sv <- svm(y~., training_data, type="C-classification", kernel="sigmoid", cost=1)
+```
+
+
+```{r}
+# Evaluate the SVM model in terms of Accuracy
+# Predict and compute the confusion matrix
+prediction1 <- predict(sv, cross_val_data)
+table("Predictions"= prediction1,  "Actual" = dataset.cross.val$airline_sentiment )
+```
+
+```{r}
+# Calculate the accuracy from the confusion matrix
+acc <- function(table){
+  TP = table[1,1];  # true positives
+  TN = table[2,2];  # true negatives
+  FP = table[1,2];  # false positives
+  FN = table[2,1];  # false negatives
+  acc = (TP + TN)/(TP + TN + FP + FN)
+  return(acc)
+}
+acc(table("Predictions"= prediction1,  "Actual" = dataset.cross.val$airline_sentiment ))
+```
+
+```{r}
+# Let's try to tune SVM parameters to further improve the model performance
+fitControl <- trainControl(method = "cv",
+                           number = 5,
+                           verboseIter = TRUE)
+
+cv.svm <- train(X,y,
+                method="svmRadial",
+                preProc = c("center", "scale"),
+                tuneLength = 5,
+                metric = "Accuracy",
+                trControl = fitControl)
+```
+
+
+```{r}
+cv.svm.prediction <- predict(cv.svm, cross_val_data)
+table("Predictions"= cv.svm.prediction,  "Actual" = dataset.cross.val$airline_sentiment )
+```
+
+```{r}
+acc(table("Predictions"= cv.svm.prediction,  "Actual" = dataset.cross.val$airline_sentiment ))
+```
+
+Difficult to explain why after tuning the parameters, the svm model is worse...
+I'll therefore chose sv over cv.svm! 
+
+
+
+# 3. Prediction over real test dataset
+
+```{r}
+prediction2 <- predict(sv, test_data)
+```
+
+
+```{r}
+# write submission CSV 
+submission <- data.frame(testset$tweet_id)
+submission$airline_sentiment <- prediction2
+names(submission)[1] <- "tweet_id"
+
+revalue(submission$airline_sentiment, c("1"="negative", "2"="neutral", "3"="positive")) -> submission$airline_sentiment
+
+write.csv(submission, file = "ML_Ass2_classifiedTweets.csv", row.names = FALSE)
+```
+
