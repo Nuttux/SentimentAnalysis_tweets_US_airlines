@@ -87,12 +87,19 @@ table("Predictions"= prediction1,  "Actual" = dataset.cross.val$airline_sentimen
 
 ```{r}
 # Calculate the accuracy from the confusion matrix
+# acc <- function(table){
+  # TP = table[1,1];  # true positives
+  # TN = table[2,2];  # true negatives
+  # FP = table[1,2];  # false positives
+  # FN = table[2,1];  # false negatives
+  # acc = (TP + TN)/(TP + TN + FP + FN)
+  # return(acc)
+# }
+
 acc <- function(table){
-  TP = table[1,1];  # true positives
-  TN = table[2,2];  # true negatives
-  FP = table[1,2];  # false positives
-  FN = table[2,1];  # false negatives
-  acc = (TP + TN)/(TP + TN + FP + FN)
+  TP = table[1,1] + table[2,2] + table[3,3];  # true predictions
+  total = nrow(cross_val_data);  # total predictions
+  acc = TP / total
   return(acc)
 }
 acc(table("Predictions"= prediction1,  "Actual" = dataset.cross.val$airline_sentiment ))
@@ -121,10 +128,6 @@ table("Predictions"= cv.svm.prediction,  "Actual" = dataset.cross.val$airline_se
 ```{r}
 acc(table("Predictions"= cv.svm.prediction,  "Actual" = dataset.cross.val$airline_sentiment ))
 ```
-
-Difficult to explain why after tuning the parameters, the svm model is worse...
-I'll therefore chose sv over cv.svm! 
-
 
 
 # 3. Prediction over real test dataset
